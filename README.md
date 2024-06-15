@@ -39,6 +39,3 @@ For academic references related to the gres tool, please cite the following:
 
 ## Contact
 To report bugs, to ask for help and to give any feedback, please contact Arthur Gruber (argruber@usp.br) or Giuliana Pola (giulianapola@usp.br).
-
----
-By following the instructions in this README, users can effectively utilize the gres.py script for genome retrieval and element extraction tasks.
