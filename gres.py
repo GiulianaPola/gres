@@ -110,13 +110,14 @@ def validate(args):
                         delimiter=find_delimiter(lines[0])
                         contig_list[""]=lines.split(delimiter)
                     else:
+                        family_index=""
+                        contig_index=""
                         delimiter=find_delimiter(lines[0])
                         if delimiter==None:
                           contig_list[""]=lines
                         else:
                           columns=lines[0].replace("\n","").split(delimiter)
-                          family_index=""
-                          contig_index=""
+                          
                           if "family" in lines[0].lower() or "clade" in lines[0].lower() or "virinae" in lines[0].lower():
                             for i in range(len(columns)):
                               if "family" in columns[i].lower() or "clade" in columns[i].lower() or "virinae" in columns[i].lower():
@@ -149,9 +150,21 @@ def validate(args):
                                   contig_list[columns[family_index]]=[]
                                 contig_list[columns[family_index]].append(columns[contig_index])
                             else:
-                              if not "" in contig_list.keys():
-                                contig_list[""]=[]
-                              contig_list[""].append(columns[contig_index])
+                              if "Not found" not in contig_list:
+                                  contig_list["Not found"] = []  # Initialize as a list if it doesn't exist
+                      
+                              # Debugging print statements
+                              #print("Type of contig_list:", type(contig_list))
+                              #print("Type of contig_list['Not found']:", type(contig_list.get("Not found", None)))
+                              try:
+                                  contig_index = int(contig_index)
+                              except ValueError:
+                                  pass
+                                  #print("Error: contig_index '{}' is not a valid integer.".format(str(contig_index)))
+                                  # Handle the error (e.g., set a default value or exit)
+                              else:
+                                  if contig_index < len(columns):  # Check if contig_index is valid
+                                      contig_list["Not found"].append(columns[contig_index])
             else:
                 print("ERROR: Contig_id's list (-i) is empty.")
                 exit()
@@ -192,8 +205,9 @@ def validate(args):
                     for file in files:
                         if file.endswith('.fasta'):
                             file_path = os.path.join(root, file)
-                            if os.path.split(file_path)[1] not in element_files:
-                                element_files[os.path.split(file_path)[1]] = file_path
+                            contig_id = next((item for v in contig_list.values() for item in v if item in os.path.split(file_path)[-1]),None)
+                            if not contig_id==None and contig_id not in element_files:
+                                element_files[contig_id] = file_path
                 if not element_files:
                     print("ERROR: Input folder '{}' does not contain element's fasta files (.fasta)!".format(folder))
         elif os.path.isfile(folder):
@@ -357,15 +371,26 @@ def download_sequences(organism_id,output_folder,family):
         return True
 def join_fastas(fasta_files, output_fasta):
     if any(fasta is None for fasta in fasta_files.values()):
-        log.write("ERROR when joining fastas: One or more input files are None!\n")
-        print("ERROR when joining fastas: One or more input files are None!")
-        log.close()
-        exit()
+        log.write("ATTENTION when joining fastas: One or more input files are None!\n")
+        print("ATTENTION when joining fastas: One or more input files are None!")
+        keys_to_remove = []
+        for contig_id, fasta in fasta_files.items():
+            if fasta is None:
+                keys_to_remove.append(contig_id)
+                log.write("'{}' ATTENTION: Fasta file is None!\n".format(contig_id))
+        for key in keys_to_remove:
+            fasta_files.pop(key)
+
     if not all(os.path.isfile(fasta) for fasta in fasta_files.values()):
-        log.write("ERROR when joining fastas:: One or more input files do not exist!\n")
-        print("ERROR when joining fastas:: One or more input files do not exist!")
-        log.close()
-        exit()
+        log.write("ATTENTION when joining fastas: One or more input files do not exist!\n")
+        print("ATTENTION when joining fastas: One or more input files do not exist!")
+        keys_to_remove = []
+        for contig_id, fasta in fasta_files.items():
+            if not os.path.isfile(fasta):
+                keys_to_remove.append(contig_id)
+                log.write("'{}' ATTENTION: Fasta file do not exist!\n".format(contig_id))
+        for key in keys_to_remove:
+            fasta_files.pop(key)
     try:
         with open(output_fasta, 'w') as f:
             pass
@@ -575,6 +600,9 @@ def blastn_elements(element_multifasta, organism_multifasta, outfile):
                                 category=[]
                                 pident = line.split()[fields.index("% identity")]
                                 lenght = line.split()[fields.index("alignment length")]
+                                qlenght = line.split()[fields.index("query length")]
+                                perclength=int(lenght)/int(qlenght)*100
+        
                                 for col, value in zip(cols, line.split()):
                                     hit[col] = value
                                 sseqid = line.split()[fields.index("subject id")]
@@ -583,7 +611,9 @@ def blastn_elements(element_multifasta, organism_multifasta, outfile):
                                     if float(pident) < 75:
                                       category.append("pident<{}".format(str(75)))
                                     if float(pident) < 1000:
-                                      category.append("lenght<{}".format(str(1000)))
+                                      category.append("alignment lenght<{}".format(str(1000)))
+                                    if float(perclength) < 98:
+                                      category.append("alignment lenght<{}".format(str(1000)))
                                     category="Invalid hit ("+" and ".join(category)+")"
                                 elif float(pident) >= 75 and int(lenght) >= 1000:
                                     if qseqid not in blast_contigs:
@@ -591,7 +621,15 @@ def blastn_elements(element_multifasta, organism_multifasta, outfile):
                                     family = next((f for f, contigs in contig_list.items() if qseqid in contigs), None)
                                     if not family in families:
                                         families.append(family)
-                                    if float(pident) >= 98 and int(lenght) >= 3000:
+                                    if float(pident) >= 98:
+                                        category.append("pident>={}%".format(str(98)))
+                                    if float(lenght) >= 3000:
+                                        category.append("alignment lenght>={}".format(str(3000)))
+                                    if float(perclength) >= 98:
+                                        category.append("% alignment lenght>={}%".format(str(98)))
+                                      category="Valid hit for subtraction ("+" and ".join(category)+")"
+                                    if float(pident) >= 98 and int(lenght) >= 3000 and perclength>=98:
+                                      category=[]
                                       if organism_id not in extraction.keys():
                                           extraction[organism_id] = dict()
                                       if family not in extraction[organism_id].keys():
@@ -599,9 +637,11 @@ def blastn_elements(element_multifasta, organism_multifasta, outfile):
                                       if qseqid not in extraction[organism_id][family]:
                                           extraction[organism_id][family].append(qseqid)
                                       if float(pident) >= 98:
-                                        category.append("pident>={}".format(str(98)))
+                                        category.append("pident>={}%".format(str(98)))
                                       if float(lenght) >= 3000:
-                                        category.append("lenght>={}".format(str(3000)))
+                                        category.append("alignment lenght>={}".format(str(3000)))
+                                      if float(perclength) >= 98:
+                                        category.append("% alignment lenght>={}%".format(str(98)))
                                       category="Valid hit for extraction ("+" and ".join(category)+")"
                                       
                                       if qseqid not in hits_by_qseqid.keys():
@@ -904,6 +944,7 @@ genome_ids=dict()
 genomes_files=dict()
 element_fastas=dict()
 with open(os.path.join(args.o, "file.log"), 'a') as log:
+    #log.write("\nELEMENT_FILES={}\n".format(element_files))
     for family in sorted(list(set(contig_list.keys()))):
         log.write("\n{}\n".format(family.upper()))
         fasta_folder = os.path.join(args.o, family) if family else args.o
@@ -917,9 +958,10 @@ with open(os.path.join(args.o, "file.log"), 'a') as log:
                 tail = "table (-old)"
             else:
                 tail = os.path.split(args.old)[-1] + " (-old)"
-            if not find_contig_in_file(contig_id.split("_")[0], args.old, contig_id.split("_")[0]):
-                log.write("'{}' ERROR: Contig_id not found in {}!\n".format(contig_id.split("_")[0], tail))
-                print("'{}' ERROR: Contig_id not found in {}!".format(contig_id.split("_")[0], tail))
+                
+            if not find_contig_in_file("_".join(contig_id.split("_")[:-1]), args.old, "_".join(contig_id.split("_")[:-1])):
+                log.write("'{}' ERROR: Contig_id '{}' not found in {}!\n".format(contig_id,"_".join(contig_id.split("_")[:-1]), tail))
+                print("'{}' ERROR: Contig_id '{}' not found in {}!".format(contig_id,"_".join(contig_id.split("_")[:-1]), tail))
                 if "ERROR: Contig_id not found in {}".format(tail) not in ERROR:
                     ERROR["ERROR: Contig_id not found in {}".format(tail)] = []
                 ERROR["ERROR: Contig_id not found in {}".format(tail)].append(contig_id)
@@ -934,15 +976,15 @@ with open(os.path.join(args.o, "file.log"), 'a') as log:
                 else:
                   organism_name = get_value(old, contig_id, "Organism name", "contig id")
                 if organism_name is None:
-                    log.write("ERROR '{}': organism_name was not found in {}!\n".format(contig_id, tail))
-                    print("ERROR '{}': organism_name was not found in {}!".format(contig_id, tail))
-                    if "ERROR: organism_name was not found in {}".format(tail) not in ERROR:
+                    log.write("ERROR '{}': Organism name was not found in {}!\n".format(contig_id, tail))
+                    print("ERROR '{}': Organism name was not found in {}!".format(contig_id, tail))
+                    if "ERROR: Organism_name was not found in {}".format(tail) not in ERROR:
                         ERROR["ERROR: organism_name was not found in {}".format(tail)] = []
-                    ERROR["ERROR: organism_name was not found in {}".format(tail)].append(contig_id)
+                    ERROR["ERROR: Organism_name was not found in {}".format(tail)].append(contig_id)
                 else:
                     log.write("'{}' Organism_name ({}): {}\n".format(contig_id, tail, organism_name))
                     values_old = {}
-                    element_size = get_value(old, contig_id.split("_")[0], "Element size", "contig id")
+                    element_size = get_value(old, "_".join(contig_id.split("_")[:-1]), "Element size", "contig id")
                     contig_size = get_value(old, "_".join(contig_id.split("_")[:-1]), "contig size", "contig id")
                     old_organism_id = get_value(old, "_".join(contig_id.split("_")[:-1]), "Organism id", "contig id")
                     organism_id = None
@@ -1062,6 +1104,7 @@ with open(os.path.join(args.o, "file.log"), 'a') as log:
                             genomes_file=find_file(args.o, "{}.fasta".format(key_name))     
                     log.close()
                     log=open(os.path.join(args.o,"file.log"), 'a')
+#log.write("\nELEMENT_FASTAS={}\n".format(element_fastas))
 if join_fastas(element_fastas, os.path.join(args.o,"all_element.fasta")):
   for organism_id in list(set(genome_ids.keys())):
     log.close()
@@ -1278,6 +1321,7 @@ for family in list(set(contig_list.keys())):
             align_length = int(hit["length"])
             sstrand[contig_id] = str(hit["sstrand"])
             sstrand[contig_id].lower()
+            perc_align_length = int(hit["length"])/int(hit["qlen"])*100
             if qlen is not None:
                 if int(align_length) != int(qlen):
                     log.write("'{}' ATTENTION: Alignment length ({}) is not equal to element size({})!\n".format(contig_id, str(align_length), str(qlen)))
@@ -1323,7 +1367,7 @@ for family in list(set(contig_list.keys())):
             elif float(pident)<98 or float(align_length)<3000:
                 log.write("'{}' NOT Contig extraction: Hit is not valid by pident ({}<{}%) or by alignment length ({}<{})!\n".format(contig_id,str(pident),str(98),str(align_length),str(3000)))
                 isbesthit=False
-            elif float(pident)>=98 and float(align_length)>=3000:
+            elif float(pident)>=98 and float(align_length)>=3000 and float(perc_align_length)>=98:
                 if not os.path.isdir(os.path.join(fasta_folder, "element")):
                     os.makedirs(os.path.join(fasta_folder, "element"))
                 isbesthit=False
@@ -1417,7 +1461,7 @@ log.write("\nExecution time per file: {}\n".format(execution/len(contigs)))
 new_names.close()
 #print("DATETIME: gres.py: {}\n".format(datetime.datetime.now()))
 table=[]
-header = ["Family", "Tab files", "FASTA elementos", "organisms", "without element", "Comentários"]
+header = ["Family", "Input fasta files", "FASTA elementos", "organisms", "without element", "Comentários"]
 table.append(header)
 for family in contig_list.keys():
     row = [family]
@@ -1443,9 +1487,9 @@ for family in contig_list.keys():
         if only_in_element_files==set() and not only_in_fasta_elements==set():
           comments.append("only in fasta elements: {}".format(only_in_fasta_elements))
         elif only_in_fasta_elements==set() and not element_files==set():
-          comments.append("only in tab files:{}".format(only_in_element_files))
+          comments.append("only in input fasta files:{}".format(only_in_element_files))
         else:
-          comments.append("only in tab files:{}, only in fasta elements:{}".format(only_in_element_files,only_in_fasta_elements))
+          comments.append("only in input fasta files:{}, only in fasta elements:{}".format(only_in_element_files,only_in_fasta_elements))
     if len(organisms)!= len(without_element):
         only_in_organisms = set(organisms) - set(without_element)
         only_in_without_element = set(without_element) - set(organisms)
