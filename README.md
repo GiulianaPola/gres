@@ -3,6 +3,11 @@
 ## Introduction
 The gres.py script is a Genome Retriever and Element Subtractor tool designed for retrieving genomes and extracting elements from them. This README provides detailed instructions on the installation, requirements, and usage of the gres tool.
 
+<img src="gres.png" width="400" />
+
+
+ The program uses as input files a set of element sequences in FASTA format and three spreadsheets in CSV format. These spreadsheets contain the identifiers of the genomes containing the elements, the respective scientific names of the organisms, the subgroups to which the elements belong (e.g. subfamily/clade in Microviridae; family in casposons), identifiers of the contigs containing the elements (in the old and new nomenclatures of the PATRIC base). gres extracts the old identifiers from the positive contigs, cross-detects the current genome and contig identifiers and retrieves the current versions of the genomes from the PATRIC database. gres then builds a database of the downloaded genomes and performs a similarity search of the sequences of the elements against the genomes and detects the current positive contigs. From the sequence coordinates of the elements, the program extracts their respective sequences and stores the genomes depleted of these elements, as well as the complete or partial sequences of the detected elements.
+
 ## Installation
 The gres.py script does not require traditional installation. Simply download the script and ensure all dependencies are met as outlined in the Requirements section.
 
